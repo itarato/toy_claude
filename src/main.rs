@@ -1,7 +1,7 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
-use std::{env, process};
+use std::{env, fs, process};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -61,8 +61,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
         .await?;
 
-    if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-        println!("{}", content);
+    for choice in response["choices"].as_array().unwrap() {
+        let message = &choice["message"];
+
+        if let Some(content) = message["content"].as_str() {
+            if !content.is_empty() {
+                println!("{}", content);
+            }
+        };
+
+        if let Some(tool_calls) = message.get("tool_calls") {
+            for tool_call in tool_calls.as_array().unwrap() {
+                let kind = tool_call["type"].as_str().unwrap();
+
+                match kind {
+                    "function" => {
+                        let function_kind = tool_call["function"]["name"].as_str().unwrap();
+                        match function_kind {
+                            "Read" => {
+                                let read_args_json =
+                                    tool_call["function"]["arguments"].as_str().unwrap();
+                                let read_args: Value =
+                                    serde_json::from_str(read_args_json).unwrap();
+                                let file_path = read_args["file_path"].as_str().unwrap();
+                                let file_contents = fs::read_to_string(file_path).unwrap();
+                                println!("{}", file_contents);
+                            }
+                            other => {
+                                eprintln!("Unknown function kind: {}", other);
+                                panic!()
+                            }
+                        }
+                    }
+                    other => {
+                        eprintln!("Unknown tool kind: {}", other);
+                        panic!()
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
