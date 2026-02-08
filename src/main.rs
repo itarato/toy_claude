@@ -1,7 +1,10 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
-use std::{env, fs, process};
+use std::{
+    env, fs,
+    process::{self, Command},
+};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -76,6 +79,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Bash",
+                        "description": "Execute a shell command",
+                        "parameters": {
+                            "type": "object",
+                            "required": ["command"],
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "The command to execute"
+                                }
+                            }
+                        }
+                    }
                 }
             ]
         });
@@ -124,6 +144,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "role": "tool",
                                         "tool_call_id": tool_call_id,
                                         "content": "File written successfully",
+                                    }));
+                                }
+                                "Bash" => {
+                                    let bash_args_json =
+                                        tool_call["function"]["arguments"].as_str().unwrap();
+                                    let bash_args: Value =
+                                        serde_json::from_str(bash_args_json).unwrap();
+                                    let command = bash_args["command"].as_str().unwrap();
+
+                                    let output = Command::new("bash")
+                                        .arg("-c")
+                                        .arg(command)
+                                        .output()
+                                        .expect("Failed to execute command");
+
+                                    messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": String::from_utf8_lossy(&output.stdout).to_string(),
                                     }));
                                 }
                                 other => {
