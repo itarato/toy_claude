@@ -27,17 +27,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_api_key(api_key);
 
     let client = Client::with_config(config);
+    let mut messages = vec![json!({
+        "role": "user",
+        "content": args.prompt
+    })];
 
-    #[allow(unused_variables)]
-    let response: Value = client
-        .chat()
-        .create_byot(json!({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": args.prompt
-                }
-            ],
+    let chat = client.chat();
+
+    loop {
+        let payload = json!({
+            "messages": messages,
             "model": "anthropic/claude-haiku-4.5",
             "tools": [
                 {
@@ -58,47 +57,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             ]
-        }))
-        .await?;
+        });
+        let response: Value = chat.create_byot(payload).await?;
 
-    for choice in response["choices"].as_array().unwrap() {
-        let message = &choice["message"];
+        let mut had_tool_calls = false;
+        for choice in response["choices"].as_array().unwrap() {
+            let message = &choice["message"];
+            messages.push(message.clone());
 
-        if let Some(content) = message["content"].as_str() {
-            if !content.is_empty() {
-                println!("{}", content);
-            }
-        };
+            if let Some(tool_calls) = message.get("tool_calls") {
+                for tool_call in tool_calls.as_array().unwrap() {
+                    had_tool_calls = true;
+                    let kind = tool_call["type"].as_str().unwrap();
 
-        if let Some(tool_calls) = message.get("tool_calls") {
-            for tool_call in tool_calls.as_array().unwrap() {
-                let kind = tool_call["type"].as_str().unwrap();
+                    match kind {
+                        "function" => {
+                            let function_kind = tool_call["function"]["name"].as_str().unwrap();
+                            let tool_call_id = tool_call["id"].as_str().unwrap();
+                            match function_kind {
+                                "Read" => {
+                                    let read_args_json =
+                                        tool_call["function"]["arguments"].as_str().unwrap();
+                                    let read_args: Value =
+                                        serde_json::from_str(read_args_json).unwrap();
+                                    let file_path = read_args["file_path"].as_str().unwrap();
+                                    let file_contents = fs::read_to_string(file_path).unwrap();
 
-                match kind {
-                    "function" => {
-                        let function_kind = tool_call["function"]["name"].as_str().unwrap();
-                        match function_kind {
-                            "Read" => {
-                                let read_args_json =
-                                    tool_call["function"]["arguments"].as_str().unwrap();
-                                let read_args: Value =
-                                    serde_json::from_str(read_args_json).unwrap();
-                                let file_path = read_args["file_path"].as_str().unwrap();
-                                let file_contents = fs::read_to_string(file_path).unwrap();
-                                println!("{}", file_contents);
-                            }
-                            other => {
-                                eprintln!("Unknown function kind: {}", other);
-                                panic!()
+                                    messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": file_contents,
+                                    }));
+                                }
+                                other => {
+                                    eprintln!("Unknown function kind: {}", other);
+                                    panic!()
+                                }
                             }
                         }
-                    }
-                    other => {
-                        eprintln!("Unknown tool kind: {}", other);
-                        panic!()
+                        other => {
+                            eprintln!("Unknown tool kind: {}", other);
+                            panic!()
+                        }
                     }
                 }
+            } else {
+                if let Some(content) = message["content"].as_str() {
+                    if !content.is_empty() {
+                        println!("{}", content);
+                    }
+                };
             }
+        }
+
+        if !had_tool_calls {
+            break;
         }
     }
 
