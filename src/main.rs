@@ -55,6 +55,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "required": ["file_path"]
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Write",
+                        "description": "Write content to a file",
+                        "parameters": {
+                            "type": "object",
+                            "required": ["file_path", "content"],
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "The path of the file to write to"
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "description": "The content to write to the file"
+                                }
+                            }
+                        }
+                    }
                 }
             ]
         });
@@ -87,6 +108,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "role": "tool",
                                         "tool_call_id": tool_call_id,
                                         "content": file_contents,
+                                    }));
+                                }
+                                "Write" => {
+                                    let write_args_json =
+                                        tool_call["function"]["arguments"].as_str().unwrap();
+                                    let write_args: Value =
+                                        serde_json::from_str(write_args_json).unwrap();
+                                    let file_path = write_args["file_path"].as_str().unwrap();
+                                    let file_contents = write_args["content"].as_str().unwrap();
+
+                                    fs::write(file_path, file_contents).unwrap();
+
+                                    messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": "File written successfully",
                                     }));
                                 }
                                 other => {
