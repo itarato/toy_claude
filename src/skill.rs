@@ -20,6 +20,7 @@ pub(crate) struct Skill {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) body: String,
+    pub(crate) context: Option<String>,
 }
 
 impl Skill {
@@ -45,6 +46,7 @@ impl Skill {
             name: map.get("name").unwrap().into_string(),
             description: map.get("description").unwrap().into_string(),
             body,
+            context: map.get("context").map(|elem| elem.into_string()),
         }
     }
 
