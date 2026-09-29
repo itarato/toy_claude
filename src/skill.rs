@@ -96,6 +96,8 @@ pub(crate) fn compile_all_skills_message_content(skills: &HashMap<String, Skill>
         .iter()
         .for_each(|(_, skill)| out.push_str(&format!("- {}: {}\n", skill.name, skill.description)));
 
+    out.push_str("\nIf a skill matches the user's request, call the Skill tool with its name and follow the instructions it returns.\n");
+
     out
 }
 

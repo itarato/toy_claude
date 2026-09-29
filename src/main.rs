@@ -90,67 +90,92 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let chat = client.chat();
 
+    let mut tools = vec![
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Read",
+                "description": "Read and return the contents of a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The path to the file to read"
+                        }
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Write",
+                "description": "Write content to a file",
+                "parameters": {
+                    "type": "object",
+                    "required": ["file_path", "content"],
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The path of the file to write to"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content to write to the file"
+                        }
+                    }
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "required": ["command"],
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The command to execute"
+                        }
+                    }
+                }
+            }
+        }),
+    ];
+
+    if !skills.is_empty() {
+        let skill_names = skills
+            .values()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<_>>();
+
+        tools.push(json!({
+          "type": "function",
+          "function": {
+            "name": "Skill",
+            "description": "Load a skill's instructions into the conversation",
+            "parameters": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string", "enum": skill_names, "description": "The name of the skill to load" },
+                "args": { "type": "string", "description": "Optional arguments for the skill" }
+              }
+            }
+          }
+        }));
+    }
+
     loop {
         let payload = json!({
             "messages": messages,
             "model": "anthropic/claude-haiku-4.5",
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "Read",
-                        "description": "Read and return the contents of a file",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "file_path": {
-                                    "type": "string",
-                                    "description": "The path to the file to read"
-                                }
-                            },
-                            "required": ["file_path"]
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "Write",
-                        "description": "Write content to a file",
-                        "parameters": {
-                            "type": "object",
-                            "required": ["file_path", "content"],
-                            "properties": {
-                                "file_path": {
-                                    "type": "string",
-                                    "description": "The path of the file to write to"
-                                },
-                                "content": {
-                                    "type": "string",
-                                    "description": "The content to write to the file"
-                                }
-                            }
-                        }
-                    }
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "Bash",
-                        "description": "Execute a shell command",
-                        "parameters": {
-                            "type": "object",
-                            "required": ["command"],
-                            "properties": {
-                                "command": {
-                                    "type": "string",
-                                    "description": "The command to execute"
-                                }
-                            }
-                        }
-                    }
-                }
-            ]
+            "tools": tools,
         });
         let response: Value = chat.create_byot(payload).await?;
 
@@ -218,8 +243,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "content": String::from_utf8_lossy(&output.stdout).to_string(),
                                     }));
                                 }
+                                "Skill" => {
+                                    let args_json =
+                                        tool_call["function"]["arguments"].as_str().unwrap();
+                                    let args: Value = serde_json::from_str(args_json).unwrap();
+                                    let skill_name = args["name"].as_str().unwrap();
+                                    let skill = skills.get(skill_name).unwrap();
+
+                                    messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": skill.body,
+                                    }));
+                                }
                                 other => {
                                     eprintln!("Unknown function kind: {}", other);
+                                    eprint!("Tool: {:?}", tool_call);
                                     panic!()
                                 }
                             }
