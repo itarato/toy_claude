@@ -5,17 +5,43 @@ use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
 use std::{
+    collections::HashMap,
     env, fs,
     process::{self, Command},
 };
 
-use crate::skill::{compile_all_skills_message_content, load_all_skill_files};
+use crate::skill::{Skill, compile_all_skills_message_content, load_all_skill_files};
 
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Args {
     #[arg(short = 'p', long)]
     prompt: String,
+}
+
+fn collect_skill_calls<'a>(
+    message_parts: &'a [&'a str],
+    skills: &'a HashMap<String, Skill>,
+) -> (Vec<&'a Skill>, &'a [&'a str]) {
+    let mut skills_out = vec![];
+    let mut args = &message_parts[..];
+
+    for i in 0..message_parts.len() {
+        if message_parts[i].starts_with('/') {
+            let skill_name = &message_parts[i][1..];
+            if let Some(skill) = skills.get(skill_name) {
+                skills_out.push(skill);
+            } else {
+                args = &message_parts[i..];
+                break;
+            }
+        } else {
+            args = &message_parts[i..];
+            break;
+        }
+    }
+
+    (skills_out, args)
 }
 
 #[tokio::main]
@@ -46,12 +72,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.prompt.starts_with('/') {
-        let parts = &args.prompt.trim()[1..].split(' ').collect::<Vec<_>>();
-        let skill_name = parts[0];
-        if let Some(skill) = skills.get(skill_name) {
+        let message_parts = args.prompt.trim().split(' ').collect::<Vec<_>>();
+        let (skills, skill_args) = collect_skill_calls(&message_parts, &skills);
+
+        for skill in skills {
             messages.push(json!({
                 "role": "user",
-                "content": skill.body_with_args_embed(&parts[1..]),
+                "content": skill.body_with_args_embed(skill_args),
             }));
         }
     } else {
