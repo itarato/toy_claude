@@ -47,6 +47,23 @@ impl Skill {
             body,
         }
     }
+
+    pub(crate) fn body_with_args_embed(&self, args: &[&str]) -> String {
+        let mut out = self.body.clone();
+
+        for (i, arg) in args.iter().enumerate() {
+            let pattern = format!("$ARGUMENTS[{}]", i);
+            let shorthand_pattern = format!("${}", i);
+
+            out = out.replace(&pattern, arg);
+            out = out.replace(&shorthand_pattern, arg);
+        }
+
+        let full_args = args.join(" ");
+        out = out.replace("$ARGUMENTS", &full_args);
+
+        return out;
+    }
 }
 
 pub(crate) fn load_all_skill_files() -> HashMap<String, Skill> {

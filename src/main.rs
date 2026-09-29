@@ -46,11 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.prompt.starts_with('/') {
-        let skill_name = &args.prompt.trim()[1..];
+        let parts = &args.prompt.trim()[1..].split(' ').collect::<Vec<_>>();
+        let skill_name = parts[0];
         if let Some(skill) = skills.get(skill_name) {
             messages.push(json!({
                 "role": "user",
-                "content": skill.body.clone(),
+                "content": skill.body_with_args_embed(&parts[1..]),
             }));
         }
     } else {
