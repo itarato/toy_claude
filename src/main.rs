@@ -1,3 +1,6 @@
+mod skill;
+mod yaml;
+
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, json};
@@ -5,6 +8,8 @@ use std::{
     env, fs,
     process::{self, Command},
 };
+
+use crate::skill::compile_all_skills_message_content;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -30,10 +35,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_api_key(api_key);
 
     let client = Client::with_config(config);
-    let mut messages = vec![json!({
+    let mut messages = vec![];
+
+    if let Some(skill_message) = compile_all_skills_message_content() {
+        messages.push(json!({
+            "role": "system",
+            "content": skill_message,
+        }));
+    }
+
+    messages.push(json!({
         "role": "user",
-        "content": args.prompt
-    })];
+        "content": args.prompt,
+    }));
 
     let chat = client.chat();
 
