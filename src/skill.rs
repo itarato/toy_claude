@@ -1,9 +1,6 @@
-use std::{
-    fs::File,
-    io::{self, Read},
-};
+use std::{collections::HashMap, fs::File, io::Read};
 
-use crate::yaml::{self, Scalar};
+use crate::yaml::{self};
 
 fn find_three_dashes(buf: &[u8]) -> usize {
     for i in 0..buf.len() - 2 {
@@ -22,7 +19,7 @@ fn find_three_dashes(buf: &[u8]) -> usize {
 pub(crate) struct Skill {
     pub(crate) name: String,
     pub(crate) description: String,
-    body: String,
+    pub(crate) body: String,
 }
 
 impl Skill {
@@ -36,52 +33,53 @@ impl Skill {
 
     pub(crate) fn new_from_bytes(buffer: &[u8]) -> Self {
         let first_dashes_end = find_three_dashes(&buffer[..]) + 4;
-        let second_dashes_dist = find_three_dashes(&buffer[first_dashes_end..]) + first_dashes_end;
+        let second_dashes_start = find_three_dashes(&buffer[first_dashes_end..]) + first_dashes_end;
 
-        let map = yaml::Parser::parse(&buffer[first_dashes_end..second_dashes_dist])
+        let map = yaml::Parser::parse(&buffer[first_dashes_end..second_dashes_start])
             .unwrap()
             .into_map();
+
+        let body = String::from_utf8(buffer[second_dashes_start + 5..].to_vec()).unwrap();
 
         Self {
             name: map.get("name").unwrap().into_string(),
             description: map.get("description").unwrap().into_string(),
-            body: String::new(),
+            body,
         }
     }
 }
 
-pub(crate) fn load_all_skill_files() -> Result<Vec<Skill>, io::Error> {
-    Ok(std::fs::read_dir("./.claude/skills/")?
-        .filter_map(|entry| {
-            let entry = entry.unwrap();
-            if !entry.file_type().unwrap().is_dir() {
-                return None;
-            }
+pub(crate) fn load_all_skill_files() -> HashMap<String, Skill> {
+    let mut map = HashMap::new();
 
-            Some(Skill::new_from_filepath(
-                entry.path().join("SKILL.md").to_str().unwrap(),
-            ))
-        })
-        .collect())
-}
+    match std::fs::read_dir("./.claude/skills/") {
+        Ok(dirs) => {
+            dirs.for_each(|entry| {
+                let entry = entry.unwrap();
+                if !entry.file_type().unwrap().is_dir() {
+                    return;
+                }
 
-pub(crate) fn compile_all_skills_message_content() -> Option<String> {
-    match load_all_skill_files() {
-        Err(_) => None,
-        Ok(skills) => {
-            if skills.is_empty() {
-                return None;
-            }
+                let skill =
+                    Skill::new_from_filepath(entry.path().join("SKILL.md").to_str().unwrap());
 
-            let mut out = String::from("You have access to the following skills:\n\n");
-
-            skills.iter().for_each(|skill| {
-                out.push_str(&format!("- {}: {}\n", skill.name, skill.description))
+                map.insert(skill.name.clone(), skill);
             });
-
-            Some(out)
         }
+        _ => {}
     }
+
+    map
+}
+
+pub(crate) fn compile_all_skills_message_content(skills: &HashMap<String, Skill>) -> String {
+    let mut out = String::from("You have access to the following skills:\n\n");
+
+    skills
+        .iter()
+        .for_each(|(_, skill)| out.push_str(&format!("- {}: {}\n", skill.name, skill.description)));
+
+    out
 }
 
 #[cfg(test)]
@@ -90,7 +88,7 @@ mod test {
 
     #[test]
     fn test_basic() {
-        let result = Skill::new_from_bytes(
+        let _result = Skill::new_from_bytes(
             b"  \n---\nname: The name\ndescription: The description\n---  \n  ",
         );
     }

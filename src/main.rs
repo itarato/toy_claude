@@ -9,7 +9,7 @@ use std::{
     process::{self, Command},
 };
 
-use crate::skill::compile_all_skills_message_content;
+use crate::skill::{compile_all_skills_message_content, load_all_skill_files};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -37,17 +37,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::with_config(config);
     let mut messages = vec![];
 
-    if let Some(skill_message) = compile_all_skills_message_content() {
+    let skills = load_all_skill_files();
+    if !skills.is_empty() {
         messages.push(json!({
             "role": "system",
-            "content": skill_message,
+            "content": compile_all_skills_message_content(&skills),
         }));
     }
 
-    messages.push(json!({
-        "role": "user",
-        "content": args.prompt,
-    }));
+    if args.prompt.starts_with('/') {
+        let skill_name = &args.prompt.trim()[1..];
+        if let Some(skill) = skills.get(skill_name) {
+            messages.push(json!({
+                "role": "user",
+                "content": skill.body.clone(),
+            }));
+        }
+    } else {
+        messages.push(json!({
+            "role": "user",
+            "content": args.prompt,
+        }));
+    }
 
     let chat = client.chat();
 
