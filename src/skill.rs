@@ -66,6 +66,10 @@ impl Skill {
 
         return out;
     }
+
+    pub(crate) fn is_subagent(&self) -> bool {
+        self.context.as_ref().map(|c| c == "fork").unwrap_or(false)
+    }
 }
 
 pub(crate) fn load_all_skill_files() -> HashMap<String, Skill> {

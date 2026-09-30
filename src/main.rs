@@ -250,11 +250,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let skill_name = args["name"].as_str().unwrap();
                                     let skill = skills.get(skill_name).unwrap();
 
-                                    messages.push(json!({
+                                    let message = json!({
                                         "role": "tool",
                                         "tool_call_id": tool_call_id,
                                         "content": skill.body,
-                                    }));
+                                    });
+
+                                    let message = if skill.is_subagent() {
+                                        let content = subagent_call(
+                                            &tools,
+                                            &chat,
+                                            json!({
+                                                "role": "user",
+                                                "content": skill.body,
+                                            }),
+                                        )
+                                        .await?;
+
+                                        json!({
+                                            "role": "user",
+                                            "content": format!("Skill apple ran in a separate context and returned: {}", content),
+                                        })
+                                    } else {
+                                        message
+                                    };
+                                    messages.push(message);
                                 }
                                 other => {
                                     eprintln!("Unknown function kind: {}", other);
@@ -284,4 +304,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+async fn subagent_call(
+    tools: &Vec<Value>,
+    chat: &async_openai::Chat<'_, OpenAIConfig>,
+    message: Value,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let messages: Vec<Value> = vec![message];
+
+    let payload = json!({
+        "messages": messages,
+        "model": "anthropic/claude-haiku-4.5",
+        "tools": tools,
+    });
+    let response: Value = chat.create_byot(payload).await?;
+
+    let content = response["choices"].as_array().unwrap()[0]["message"]["content"]
+        .as_str()
+        .unwrap();
+
+    Ok(content.to_string())
 }
